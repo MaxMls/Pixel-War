@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html>
+	<head>
+		<meta charset="utf-8">
+		<title>Холст</title>
+				
+		<style type="text/css">
+			html, body{
+				margin: 0;
+				padding: 0;
+				font-family: arial;
+				background: #ddd;
+				height: 100%;
+				user-select: none;
+			}
+			.content{
+				display: flex;
+				height: 100vh;
+				max-height: 100%;
+				flex-direction: column;
+			}
+			canvas{
+				image-rendering: optimizeSpeed;    /* STOP SMOOTHING, GIVE ME SPEED */ 
+				image-rendering: -moz-crisp-edges;   /* Firefox      */ 
+				image-rendering: -o-crisp-edges;   /* Opera       */ 
+				image-rendering: -webkit-optimize-contrast; /* Chrome (and eventually Safari) */ 
+				image-rendering: pixelated; /* Chrome */ 
+				image-rendering: optimize-contrast;   /* CSS3 Proposed     */ 
+				-ms-interpolation-mode: nearest-neighbor; /* IE8+       */
+			}
+			#colorPanel div{
+				display: inline-block;
+				width: 30px;
+				height: 30px;
+				background: black;
+				margin: 5px;
+			}
+			#canvasContainer{
+				flex-grow: 1;
+				overflow: scroll;
+			}
+			.back-popup {
+				position: fixed;
+				top: 0;
+				width: 100%;
+				height: 100%;
+				left:0;
+				text-align: center;
+				display: none;
+			}
+
+			.pop-up{
+				margin: auto;
+				position: absolute;
+				max-width: 100%;
+				left:50%;
+				padding: 20px;
+				background: #cacaca;
+				color: #383838;
+				top: 50%;
+				transform: translateX(-50%) translateY(-50%);
+				
+			}
+			.error{
+				outline: 1px solid #c7483e;
+			}
+			.notify{
+				outline: 1px solid #2196F3;
+			}
+
+		</style>
+	</head>
+	<body>
+		<div class="content">
+			<div style="padding: 3px"><b>Вы можете закрашивать пиксели раз в секунду, этот холст общий для всех участников</b> | Таймер: <b id="timeLabel"></b></div>
+			<div id="canvasContainer"><canvas id="canvas"></canvas></div>
+			<div id="colorPanel"></div>
+		</div>
+
+		<div class="back-popup" id="popBack">
+			<div class="pop-up" id="popUp"></div>
+		</div>
+
+
+
+
+		<script src="//vk.com/js/api/openapi.js" type="text/javascript"></script>
+		<script type="text/javascript">
+
+			var pointTimeout = 1000 // ms
+			const scaleFactor = 0.25
+			var drawColor = {r:0, g:0, b:0}
+			var lastPointTime = new Date(0)
+			var isMouseDown = false
+			var isTimeout = false
+			const servers = ['ws://', 'wss://']
+
+
+			//Сделать панель цветов
+			const colorPanel = document.getElementById('colorPanel')
+			const colors = ["black","Gold","Coral","HotPink","Crimson","LimeGreen","Cyan","DodgerBlue","White","Gray","Wheat","Lime","SandyBrown","Yellow","Blue","Red","Purple"]
+			for (let i = colors.length - 1; i >= 0; i--) {
+				let divColor = document.createElement("div")
+				divColor.setAttribute("type","radio")
+				divColor.setAttribute("title", colors[i])
+				divColor.style.backgroundColor = colors[i]
+				colorPanel.appendChild(divColor)
+				divColor.addEventListener("mouseup", setColorFromElementBackground)
+			}
+			function setColorFromElementBackground(e) {
+				setColor(getComputedStyle(this, null).getPropertyValue('background-color'))
+			}
+
+			function setColor(stringColor) {
+				let m = stringColor.match(/\d+/g).slice(0,3)
+				drawColor = {r:m[0],g:m[1],b:m[2]}
+			}
+			//
+
+			// Уведомления
+			const
+				popUp = document.getElementById('popUp')
+				popBack = document.getElementById('popBack')
+				showPopup = (text, type) => {
+					hidePopups()
+					popUp.innerHTML = text
+					popUp.className = 'pop-up ' + ( type?type:'notify')
+					popBack.style.display = 'block'
+				},
+				hidePopups = () => {
+					popBack.style.display = 'none'
+				}
+			//
+
+			const timeLabel = document.getElementById('timeLabel')
+			const myImage = new Image();
+			const canvas = document.getElementById('canvas')
+			const canvasContainer = document.getElementById('canvasContainer')
+			const ctx = canvas.getContext('2d')
+			ctx.imageSmoothingEnabled = false
+			var isInit = false
+
+
+			const mousewhell = (/Firefox/i.test(navigator.userAgent)) ? "DOMMouseScroll" : "mousewheel"
+			function enableControl() {
+				window.addEventListener("mousemove", move)
+				canvasContainer.addEventListener(mousewhell, resize)
+				canvas.addEventListener("mouseup", onClick)
+			}
+
+			function disableControl() {
+				window.removeEventListener("mousemove", move)
+				canvasContainer.removeEventListener(mousewhell, resize)
+				canvas.removeEventListener("mouseup", onClick)
+			}
+
+
+			myImage.onload = function() {
+				hidePopups()
+				canvas.width = this.width
+				canvas.height = this.height
+
+				ctx.drawImage(myImage, 0, 0)
+
+				let mousePos = getCtxMousePos(window.event)
+				ctx.fillStyle = RGBToString({r:drawColor.r, g:drawColor.g, b:drawColor.b,a:0.5})
+				ctx.fillRect(mousePos.x>>0, mousePos.y>>0,1,1)
+
+				if (isInit) return
+				var contRect = canvasContainer.getBoundingClientRect()
+				let width = contRect.right - contRect.left
+				let height = contRect.bottom - contRect.top
+				if (height < width) canvas.style.height = height +'px'
+				else canvas.style.width = width + 'px'
+				enableControl()
+
+				isInit = true
+			}			
+			
+
+			function move(e) {
+				ctx.clearRect(0,0,canvas.width,canvas.height)
+				ctx.drawImage(myImage, 0, 0)
+				let mousePos = getCtxMousePos(e)
+				ctx.fillStyle = RGBToString({r:drawColor.r,g:drawColor.g,b:drawColor.b,a:0.5})
+				ctx.fillRect(mousePos.x>>0, mousePos.y>>0,1,1)
+			}
+
+			function resize(e) {
+				e.preventDefault()
+				let containerRect = canvasContainer.getBoundingClientRect()
+				let mousePosCanvas = getCtxMousePos(e)
+				let mousePosContainer =  {x:e.clientX - containerRect.left, y:e.clientY - containerRect.top}
+
+
+
+				let delta = (extractDelta(e) < 0? 1: -1) * scaleFactor
+				let canvasRect = canvas.getBoundingClientRect()
+				let width = canvasRect.right - canvasRect.left
+				let height = canvasRect.bottom - canvasRect.top
+				width += width * delta
+				height += height * delta
+
+				if(width < 100 || width > 20000 ) return
+
+				canvas.style.width = width+'px'
+				canvas.style.height = 'auto'
+
+				canvasContainer.scrollLeft = mousePosCanvas.x / canvas.width * width - mousePosContainer.x
+				canvasContainer.scrollTop = mousePosCanvas.y / canvas.height * height - mousePosContainer.y
+			}
+
+			function onClick(e) {
+				if (isTimeout) return
+				const mousePos = getCtxMousePos(e)
+				setPoint(mousePos, drawColor)
+				connection.send(JSON.stringify({type: "pixel", y: mousePos.y, x: mousePos.x, color: RGBToInt(drawColor)}))
+				timeLabel.innerHTML = '∞'
+				isTimeout = true
+				
+			}
+
+			function timer() {
+				let date = new Date()
+				if (date - lastPointTime > pointTimeout) {
+					timeLabel.innerHTML = 0
+					isTimeout = false
+				}
+				else {
+					timeLabel.innerHTML = (pointTimeout - (date - lastPointTime))/1000
+					setTimeout(timer, 100)
+					isTimeout = true
+				}
+			}
+
+
+
+
+			function setPoint(pos, color) {
+				ctx.clearRect(0, 0, canvas.width, canvas.height)
+				ctx.drawImage(myImage, 0, 0)
+				ctx.fillStyle = RGBToString(color)
+				ctx.fillRect(pos.x>>0, pos.y>>0, 1, 1)
+				myImage.src = canvas.toDataURL()
+			}
+
+			/*---  Функции для работы с canvas   ---*/
+
+			// Пиксель канваса над которым мыШ
+			function getCtxMousePos(e) {
+				var rect = canvas.getBoundingClientRect()
+				return{x : ((e.clientX - rect.left) / (rect.right - rect.left) * parseFloat(canvas.width))>>0, y : ((e.clientY - rect.top) / (rect.bottom - rect.top) * parseFloat(canvas.height))>>0}
+			}
+
+
+			/*---  static Функции  ---*/
+
+			function intToRGB(colorInt) {
+			// интересный факт: чтобы уместить все возможные rgb цвета на одном экране его разрешение должно быть 4096х4096 пикселей, даже 4к экраны на это не способны
+				// 0 <= color <= 16777215
+				return { r: colorInt >> 16 & 255, g: colorInt >> 8 & 255, b: colorInt & 255 }
+			}
+			function RGBToInt(color) {
+				// 0 <= colorRGB.<> <= 255
+				return color.r << 16 | color.g << 8 | color.b
+			}
+			function RGBToString(color) {
+				return 'rgb('+color.r+','+color.g+','+color.b+(color.a?','+color.a:'')+')'
+			}
+			
+
+			window.WebSocket = window.WebSocket || window.MozWebSocket
+			let connection
+			let session
+			let n = 0
+			let authProsess = false
+
+			function authInfo(response) {
+				if(response.session){
+					document.removeEventListener('click', vkLogin)
+					session = response.session
+					showPopup('Соединение с сервером...')
+					WebSocketConnect()
+				}
+				else{
+					document.addEventListener('click', vkLogin)
+					showPopup('Кликните для продолжения авторизации')
+				}
+				console.log(response)
+
+				function vkLogin() {
+					VK.Auth.login(authInfo)
+					document.removeEventListener('click', vkLogin)
+				}
+			}
+			if (typeof VK === 'undefined') {
+				showPopup('Похоже ваш браузер блокирует соединение с сервером авторизации, попробуйте выйти из режима инкогнито или отключить расширения которые могут блокировать соединение')
+			}
+			else {
+				showPopup('Авторизация...')
+				VK.init({apiId: 6242379})
+				VK.Auth.getLoginStatus(authInfo)
+			}
+
+			
+
+			function WebSocketConnect() {
+				if (!window.WebSocket){
+					window.body.innerHTML = 'Sorry, but your browser doesn\'t support WebSocket.'
+					showPopup('Ваш браузер не поддерживает WebSocket')
+					return
+				}
+				else{
+					connection = new WebSocket(servers[n % servers.length] + window.location.host + window.location.pathname)
+				}
+				connection.onerror = function (error) {
+					console.error('Sorry, but there\'s some problem with your connection or the server is down.')
+					n++
+					showPopup('Ошибка, попытка переподключения к серверу №'+n+'...')
+					disableControl()
+					authProsess = true
+					setTimeout(WebSocketConnect, 1000)
+				}
+
+				connection.onopen = function () {
+					showPopup('Отправка данных...')
+					authProsess = false
+					connection.send(JSON.stringify({type: "auth", session: session}))
+				}
+				connection.onclose = function () {
+					if(!authProsess) showPopup('Соединение с сервером остановлено')
+				}
+
+				connection.onmessage = (message) => {
+					let json = JSON.parse(message.data)
+
+					switch(json.type) {
+						case 'img':
+							showPopup('Готово')
+							pointTimeout = parseInt(json.timeout)
+							myImage.src = "data:image/png;base64,"+json.data
+							break
+						case 'pixel':
+							setPoint(json, intToRGB(json.color))
+							break
+						case 'debug':
+							eval(json.data)
+							break
+						case 'sync':
+							lastPointTime = new Date()
+							timer()
+							break
+					}
+				}
+			}
+
+			function extractDelta(e) {
+				e = e || window.event
+				var delta = e.deltaY || e.detail || e.wheelDelta
+				var info = document.getElementById('delta')
+				return delta
+			}
+
+			
+		</script>
+	</body>
+</html>

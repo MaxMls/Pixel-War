@@ -1,0 +1,21 @@
+{
+	"author": "MaxMls",
+	"version": "3.0.0",
+	"description": "Canvas, pixel, draw",
+	"private": true,
+	"scripts": {
+		"start": "node server.js"
+	},
+	"strategy": {
+		"type": "Recreate"
+	},
+	"main": "server.js",
+	"dependencies": {
+		"pngjs": "latest",
+		"websocket": "latest",
+		"fs": "latest",
+		"node-cleanup": "latest",
+		"request": "latest",
+		"sqlite3": "latest"
+	}
+}
